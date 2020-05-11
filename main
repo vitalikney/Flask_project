@@ -1,0 +1,33 @@
+from flask import Flask, render_template, request
+from flask_login import login_user, login_manager, LoginManager, login_required, logout_user, current_user
+from flask_wtf import FlaskForm
+from werkzeug.utils import redirect
+from wtforms import StringField, PasswordField, BooleanField, SubmitField, TextField
+from wtforms.validators import DataRequired, Required
+
+from data import db_session
+from data.Admins import Admins
+from data.Products import Products
+from data.db_session import global_init
+
+app = Flask(__name__)
+app.config['SECRET_KEY'] = 'yandexlyceum_secret_key'
+login_manager = LoginManager()
+login_manager.init_app(app)
+global_init("db/base.sqlite")
+session = db_session.create_session()
+
+
+@app.route('/')
+@app.route('/home')
+def home():
+    lp = session.query(Products).all()
+    print(lp)
+    return render_template('home.html', all_products=[[i for i in range(3)] for i in range(5)])
+
+
+class LoginForm(FlaskForm):
+    email = StringField('Логин', validators=[DataRequired()])
+    password = PasswordField('Пароль', validators=[DataRequired()])
+    remember_me = BooleanField('Запомнить меня')
+    submit = SubmitField('Войти')
