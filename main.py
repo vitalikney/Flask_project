@@ -1,77 +1,94 @@
-import json
-import os
-
-from flask import Flask, url_for, request, render_template, redirect
+from flask import Flask, render_template, request
+from flask_login import login_user, login_manager, LoginManager, login_required, logout_user, current_user
+from flask_wtf import FlaskForm
+from werkzeug.utils import redirect
+from wtforms import StringField, PasswordField, BooleanField, SubmitField, TextField
+from wtforms.validators import DataRequired, Required
 
 from data import db_session
-from data.users import User
-
+from data.Admins import Admins
+from data.Products import Products
+from data.db_session import global_init
 
 app = Flask(__name__)
-db_session.global_init("db/blogs.sqlite")
+app.config['SECRET_KEY'] = 'yandexlyceum_secret_key'
+login_manager = LoginManager()
+login_manager.init_app(app)
+global_init("db/base.sqlite")
+session = db_session.create_session()
 
 
 @app.route('/')
-def index():
-    """main page"""
-    return render_template('main.html')
+@app.route('/home')
+def home():
+    lp = session.query(Products).all()
+    print(lp)
+    return render_template('home.html', all_products=[[i for i in range(3)] for i in range(5)])
 
 
-@app.route('/instr')
-def instr():
-    """instruction for using"""
-    return render_template('Инструкция.html')
+class LoginForm(FlaskForm):
+    email = StringField('Логин', validators=[DataRequired()])
+    password = PasswordField('Пароль', validators=[DataRequired()])
+    remember_me = BooleanField('Запомнить меня')
+    submit = SubmitField('Войти')
 
 
-@app.route('/table')
-def tab():
-    """page with a table of orders"""
-    return render_template('ordertable.html', user=js_info())
+def adding_the_product(title, information, cost):
+    prod = Products()
+    prod.title = title
+    prod.information = information
+    prod.cost = cost
+    session.add(prod)
+    session.commit()
+    lp = session.query(Products).all()
 
 
-@app.route('/ord', methods=['POST', 'GET'])
-def order():
-    """function, which makes orders and creates json"""
-    if request.method == 'POST':
-        filejs = {'name': request.form['name'],
-             'address': request.form['address'],
-             'telefon': request.form['telnum'],
-             'email': request.form['email'],
-             'amount': request.form['cooknumber'],
-             'surgeter': request.form['surgeter'],
-             'cv': request.form['CVV'],
-             'kindofcook': request.form['kindof'],
-             'comment': request.form['comment'],
-             'time': request.form['time']}
-        with open('info.json', 'w') as f:
-            f.write(json.dumps(filejs))
-        return redirect(url_for('tab'))
-    else:
-        return render_template('makeorder.html')
-
-
-def js_info():
-    """function, which creates database"""
+@login_manager.user_loader
+def load_user(user_id):
     session = db_session.create_session()
-    if os.access('info.json', os.R_OK):
-        with open('info.json') as f:
-            file = f.read()
-            resp = json.loads(file)
-            user = User(name=resp['name'],
-                        telefon=resp['telefon'],
-                        address=resp['address'],
-                        email=resp['email'],
-                        kindofcook=resp['kindofcook'],
-                        amount=resp['amount'],
-                        comment=resp['comment'],
-                        time=resp['time'],
-                        cv=resp['cv'],
-                        surgeter=resp['surgeter'])
-            session.add(user)
-            session.commit()
-            os.remove('info.json')
-    user = session.query(User)
-    return user
+    return session.query(Admins).get(user_id)
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    form = LoginForm()
+    if form.validate_on_submit():
+        admin = session.query(Admins).filter(Admins.email == form.email.data).first()
+        if admin and admin.check_password(form.password.data):
+            login_user(admin, remember=form.remember_me.data)
+            return redirect("/admin")
+        return render_template('login.html', message="Неправильный логин или пароль", form=form)
+    return render_template('login.html', title='Авторизация', form=form)
+
+
+@app.route('/add_product', methods=['GET', 'POST'])
+def add_product():
+    if not current_user.is_authenticated:
+        login()
+    if request.method == 'GET':
+        return render_template('add_product.html')
+    elif request.method == 'POST':
+        print(request.form['title'])
+        print(request.form['cost'])
+        print(request.form['info'])
+        adding_the_product(request.form['title'], request.form['cost'], request.form['info'])
+        for prod in session.query(Products).all():
+            print(prod.title)
+        return "success"
+# return render_template('login.html', title='Авторизация', form=form)
+
+
+@app.route('/admin')
+def admin():
+    if current_user.is_authenticated:
+        return render_template('admin.html', name=current_user.fullname)
+
+
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect("/")
 
 
 if __name__ == '__main__':
